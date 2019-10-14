@@ -7,10 +7,13 @@ verify_ssl = true
 
 [packages]
 requests = "*"
-aiohttp = "*"
 bs4 = "*"
 pprint = "*"
 lxml = "*"
+pylint = "*"
+aiohttp = "*"
+sqlalchemy = "*"
+aiopg = {extras = ["sa"],version = "*"}
 
 [requires]
 python_version = "3.7"
