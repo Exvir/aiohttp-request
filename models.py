@@ -39,43 +39,81 @@ session.commit()
 import asyncio
 from aiopg.sa import create_engine
 import sqlalchemy as sa
-
+from aiohttp import ClientSession, ClientTimeout
 
 metadata = sa.MetaData()
 
-tbl = sa.Table('tbl', metadata,
+page = sa.Table('page', metadata,
                sa.Column('id', sa.Integer, primary_key=True),
                sa.Column('val', sa.String(255)))
 
 
-async def create_table(engine):
+async def create_table_page(engine):
     async with engine.acquire() as conn:
-        await conn.execute('DROP TABLE IF EXISTS tbl')
-        await conn.execute('''CREATE TABLE tbl (
+        await conn.execute('DROP TABLE IF EXISTS page')
+        await conn.execute('''CREATE TABLE page (
                                   id serial PRIMARY KEY,
                                   val varchar(255))''')
 
 
-async def insert_to_table(url, engine):
+async def insert_to_table_page(url, engine):
     #Нужно для каждой транзакции своё соединение открывать!
     async with engine.acquire() as connect:
-        await connect.execute(tbl.insert().values(val=f'{url}'))
+        await connect.execute(
+            f"INSERT INTO page (val) VALUES ('{url}') RETURNING id"
+                            )
+        #await connect.execute(page.insert().values(val=f'{url}'))
+        #return await connect.execute(page.select(val=f'{url}').id)
+
+
+relation = sa.Table('relation', metadata,
+               sa.Column('id_link', sa.Integer, primary_key=True),
+               sa.Column('id_page', sa.Integer)
+                    )
+
+
+async def create_table_relation(engine):
+    async with engine.acquire() as conn:
+        await conn.execute('DROP TABLE IF EXISTS relation')
+        await conn.execute('''CREATE TABLE relation (
+                                  id_link serial PRIMARY KEY,
+                                  id_page Integer)''')  
+
+
+async def insert_to_table_relation(i, engine):
+    #Нужно для каждой транзакции своё соединение открывать!
+    async with engine.acquire() as connect:
+        await connect.execute(relation.insert().values(id_page=1))
+
+
+async def request(url, session):
+        async with session.get(url) as response:
+            #Вызов сопрограммы (генератора)
+            html = await response.text()
+            print(f'Запрос: {datetime.now().isoformat()}')
+            return html
 
 
 async def go(list_url):
     tasks = []
+    tasks2 = []
     async with create_engine(user='exvir',
                              database='webproject',
                              host='127.0.0.1',
                              password='qscft813813') as engine:
 
-        await create_table(engine)
+        await create_table_page(engine)
+        await create_table_relation(engine)
+ 
         for url in list_url:
-            task = asyncio.create_task(insert_to_table(url, engine))
+            task = asyncio.create_task(insert_to_table_page(url, engine))
+            task2 = asyncio.create_task(insert_to_table_relation(, engine))
             tasks.append(task)
+            tasks2.append(task2)
+        await asyncio.gather(*tasks2)
         await asyncio.gather(*tasks)
         async with engine.acquire() as connect:
-            async for row in connect.execute(tbl.select()):
+            async for row in connect.execute(page.select()):
                 print(row.id, row.val)
 
 

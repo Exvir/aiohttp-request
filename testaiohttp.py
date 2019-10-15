@@ -14,83 +14,85 @@ import sqlalchemy as sa
 #Таблица
 metadata = sa.MetaData()
 
-tbl = sa.Table('tbl', metadata,
-               sa.Column('id', sa.Integer, primary_key=True),
-               sa.Column('val', sa.String(255)))
+page = sa.Table('page', metadata,
+               sa.Column('id_page', sa.Integer, primary_key=True),
+               sa.Column('url', sa.String(255)))
 
 
-async def create_table(engine):
+async def create_table_page(engine):
     async with engine.acquire() as conn:
-        await conn.execute('DROP TABLE IF EXISTS tbl')
-        await conn.execute('''CREATE TABLE tbl (
-                                  id serial PRIMARY KEY,
-                                  val varchar(500))''')
+        await conn.execute('DROP TABLE IF EXISTS page')
+        await conn.execute('''CREATE TABLE page (
+                                id_page serial PRIMARY KEY,
+                                url varchar(500))''')
 
 
-async def insert_to_table(url, engine):
-    #Нужно для каждой транзакции своё соединение открывать!
-    async with engine.acquire() as connect:
-        await connect.execute(tbl.insert().values(val=f'{url}'))
-        print(f'Запись: {datetime.now().isoformat()}')
+relation = sa.Table('relation', metadata,
+               sa.Column('id_link', sa.Integer, primary_key=True),
+               sa.Column('id_page', sa.Integer)
+                    )
 
 
-async def get_html(url, session):
+async def create_table_relation(engine):
+    async with engine.acquire() as conn:
+        await conn.execute('DROP TABLE IF EXISTS relation')
+        await conn.execute('''CREATE TABLE relation (
+                                id_link serial PRIMARY KEY,
+                                id_page Integer)''')                                 
+
+
+async def create_postgres_tables():
+    async with create_engine(user='testtaskuser',
+                            database='testtasks',
+                            host='127.0.0.1',
+                            password='qazwsx134134'
+                            ) as engine:
+        #Нужно для каждой транзакции своё соед
+        await create_table_page(engine)
+        await create_table_relation(engine)
+
+
+async def request(url, session):
         async with session.get(url) as response:
             #Вызов сопрограммы (генератора)
-            result = await response.text()
+            html = await response.text()
             print(f'Запрос: {datetime.now().isoformat()}')
-            return result
+            return html
 
-async def series_get_html(list_url):
-    tasks1 = []
-    async with create_engine(user='exvir',
-                             database='webproject',
-                             host='127.0.0.1',
-                             password='qscft813813'
-                             ) as engine:
-        await create_table(engine)                     
-        async with ClientSession(timeout=ClientTimeout(total=120)) as session:
-            N = range(len(list_url))
-            for url in list_url:
-                await insert_to_tab(f'{url}', engine)
-                task1 = asyncio.create_task(get_html(f'{url}', session))
-                #print(f'Зашёл в {url}')
-                tasks1.append(task1)
 
-            #Ожидает завершения всех фьючерсов, нужно чтобы синхронизировать все результаты и вывести их имено в этом порядке
-            list_html = await asyncio.gather(*tasks1)
-            return list_html
+async def insert_to_table_page(url):
+    async with create_engine(user='testtaskuser',
+                            database='testtasks',
+                            host='127.0.0.1',
+                            password='qazwsx134134'
+                            ) as engine:
+        #Нужно для каждой транзакции своё соединение открывать!
+        async with engine.acquire() as connect:
+            await connect.execute(page.insert().values(url=f'{url}'))
+            print(f'Запись: {datetime.now().isoformat()}')
 
-'''
-async def get_html(url, session):
-    async with session.get(url) as response:
-        
-        #Вызов сопрограммы (генератора)
-        result = await response.text()
-        print(datetime.now().isoformat())
-        return result
-            
 
-async def series_get_html(list_url):
-
-    tasks = []
-    async with ClientSession(timeout=ClientTimeout(total=600)) as session:
-        N = range(len(list_url))
+async def series_requests(list_url):
+    tasks_request = []
+    tasks_create_page = []                 
+    async with ClientSession(timeout=ClientTimeout(total=120)) as session:
         for url in list_url:
-            #Создаётся список задач, тут можно вставить цикл for
-            task = asyncio.create_task(get_html(f'{url}', session))
-            #print(f'Зашёл в {url}')
-            tasks.append(task)
+            task_request = asyncio.create_task(request(f'{url}', session))
+            task_create_page = asyncio.create_task(insert_to_table_page(f'{url}'))
+            tasks_request.append(task_request)
+            tasks_create_page.append(task_create_page)
         #Ожидает завершения всех фьючерсов, нужно чтобы синхронизировать все результаты и вывести их имено в этом порядке
-        return await asyncio.gather(*tasks)
-'''
+        list_html = await asyncio.gather(*tasks_request)
+        await asyncio.gather(*tasks_create_page)
+        return list_html
+
 
 #Принимает список тегов, возвращает список ссылок
 def parser_href(list_a_tag):
     list_href = []
     for a in list_a_tag:
-        href1 = 'https://ru.wikipedia.org'+a.get('href')
-        list_href.append(href1)
+        href = a.get('href')
+        list_href.append(href)
     return list_href
 
 #принимает список html, возвращает список href
@@ -98,53 +100,33 @@ def parser_html(list_html):
     list_href = []
     for html in list_html:
         soup = BeautifulSoup(html, 'html.parser')
-        #print(soup)
-        list_a_tag = soup.findAll('a', href=re.compile('^/wiki/*'))
-        #print(f'Список а тегов {list_a_tag}')
+        list_a_tag = soup.findAll('a')
+        #Создать базу данных и записывать значения
         list_href += parser_href(list_a_tag)
     return list_href
 
-def recursion(list_url, steps=1):
 
+async def recursion(steps=1):
     if steps == 0:
         print('Последний шаг сделан')
         print(datetime.now().isoformat())
     else:
-        #Создаётся асинхронная петля
-        loop = asyncio.get_event_loop()
-        #создаётся фьючерс, который передставляет собой асинхронного клиента, которому передаётся список url
-        future = asyncio.ensure_future(series_get_html(list_url))
-        #Почитать про метод
-        list_html = loop.run_until_complete(future)
+        list_html = await series_requests(list_url)
         list_href = parser_html(list_html)
-        #print(f'Нужно зайти {list_href}')
         print(f'Сделан шаг 1, осталось шагов {steps-1}')
         print(datetime.now().isoformat())
-        recursion(list_href, steps-1)
+        await recursion(steps-1)
 
-def sinhron(list_url):
-    for url in list_url:
-        list_html = []
-        html = requests.get(url).text
-        list_html.append(html)
-        list_href = parser_html(list_html)
-        print(datetime.now().isoformat())
+
+async def run():
+    await create_postgres_tables()
+    await recursion(steps=1)
 
 
 if __name__ == "__main__":
+    test_list_url = ['http://127.0.0.1:8000/test1/']
     list_url = ['https://ru.wikipedia.org/wiki/Анантнаг_(округ)']
-    '''
-    response = requests.get('https://ru.wikipedia.org/wiki/%D0%94%D0%B6%D0%BE%D0%BA%D0%B5%D1%80_(%D1%84%D0%B8%D0%BB%D1%8C%D0%BC,_2019)').text
-    #так получается объект суп
-    soup = BeautifulSoup(response, 'html.parser')
-    #Так можно найти значение ссылки первой a
-    list_a_tag = soup.findAll('a', href=re.compile('^/wiki/*'))
-    list_url = parser_href(list_a_tag)
-
-    #перебрать все ссылки
 
     loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(series_get_html(list_url))
+    future = asyncio.ensure_future(run())
     loop.run_until_complete(future)
-    print(datetime.now().isoformat())'''
-    recursion(list_url, steps=2)
