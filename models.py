@@ -35,6 +35,7 @@ session.add(FirstPage)
 #Внести изменения в БД
 session.commit()
 '''
+from datetime import datetime
 
 import asyncio
 from aiopg.sa import create_engine
@@ -81,7 +82,7 @@ async def create_table_relation(engine):
 
 
 async def insert_to_table_relation(i, engine):
-    #Нужно для каждой транзакции своё соединение открывать!
+    # Нужно для каждой транзакции своё соединение открывать!
     async with engine.acquire() as connect:
         await connect.execute(relation.insert().values(id_page=1))
 
@@ -94,22 +95,26 @@ async def request(url, session):
             return html
 
 
-async def go(list_url):
-    tasks = []
-    tasks2 = []
+async def go(urls: list):
     async with create_engine(user='exvir',
                              database='webproject',
                              host='127.0.0.1',
-                             password='qscft813813') as engine:
+                             password='qazwsx') as engine:
 
         await create_table_page(engine)
         await create_table_relation(engine)
- 
-        for url in list_url:
-            task = asyncio.create_task(insert_to_table_page(url, engine))
-            task2 = asyncio.create_task(insert_to_table_relation(, engine))
-            tasks.append(task)
-            tasks2.append(task2)
+
+        # tasks = []
+        # tasks2 = []
+        #
+        # for url in urls:
+        #     task = asyncio.create_task(insert_to_table_page(url, engine))
+        #     task2 = asyncio.create_task(insert_to_table_relation(engine))
+        #     tasks.append(task)
+        #     tasks2.append(task2)
+
+        tasks = [asyncio.create_task(insert_to_table_page(url, engine)) for url in urls]
+        tasks2 = [asyncio.create_task(insert_to_table_page(url, engine)) for url in urls]
         await asyncio.gather(*tasks2)
         await asyncio.gather(*tasks)
         async with engine.acquire() as connect:
@@ -117,6 +122,7 @@ async def go(list_url):
                 print(row.id, row.val)
 
 
-list_url = ['http://127.0.0.1:8000/', 'http://127.0.0.1:8000/test1', 'http://127.0.0.1:8000/test2']
-loop = asyncio.get_event_loop()
-loop.run_until_complete(go(list_url))
+urls = ['http://127.0.0.1:8000/', 'http://127.0.0.1:8000/test1', 'http://127.0.0.1:8000/test2']
+# loop = asyncio.get_event_loop()
+# loop.run_until_complete(go(urls))
+asyncio.run(go(urls))
